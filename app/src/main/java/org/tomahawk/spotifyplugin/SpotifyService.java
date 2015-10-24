@@ -264,6 +264,10 @@ public class SpotifyService extends Service {
 
     @Override
     public void onDestroy() {
+        if (mPlayer != null) {
+            mPlayer.pause();
+            mPlayer = null;
+        }
         Spotify.destroyPlayer(this);
         mWifiLock.release();
         mCallbacks.kill();
