@@ -30,8 +30,8 @@ android {
         applicationId "org.tomahawk.spotifyplugin"
         minSdkVersion 14
         targetSdkVersion 22
-        versionCode 10
-        versionName "0.10"
+        versionCode 20
+        versionName "0.20"
     }
 
     if (project.hasProperty("RELEASE_STORE_FILE")) {
