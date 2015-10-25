@@ -16,7 +16,7 @@ def getNewVersionName = { ->
 }
 
 dependencies {
-    compile 'com.spotify.sdk:spotify-player:1.0.0-beta10@aar'
+    compile 'com.spotify.sdk:spotify-player:1.0.0-beta11@aar'
     compile("ch.acra:acra:4.6.2") {
         transitive = false
     }
