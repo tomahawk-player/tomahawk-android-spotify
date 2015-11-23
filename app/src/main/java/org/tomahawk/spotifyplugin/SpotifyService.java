@@ -38,6 +38,8 @@ public class SpotifyService extends Service {
 
     private boolean mIsPlaying;
 
+    private String mCurrentAccessToken;
+
     /**
      * This is a list of callbacks that have been registered with the service.  Note that this is
      * package scoped (instead of private) so that it can be accessed more efficiently from inner
@@ -68,6 +70,7 @@ public class SpotifyService extends Service {
         public void prepare(String uri, String accessToken, String accessTokenSecret,
                 long accessTokenExpires) throws RemoteException {
             if (mPlayer == null) {
+                mCurrentAccessToken = accessToken;
                 Config playerConfig = new Config(SpotifyService.this, accessToken, CLIENT_ID);
                 Player.Builder builder = new Player.Builder(playerConfig);
                 mPlayer = Spotify.getPlayer(builder, this,
@@ -87,8 +90,9 @@ public class SpotifyService extends Service {
                                         "Could not initialize player: " + throwable.getMessage());
                             }
                         });
-            } else {
-                mPlayer.login(accessToken);
+            } else if (accessToken != null && !accessToken.equals(mCurrentAccessToken)) {
+                mCurrentAccessToken = accessToken;
+                mPlayer.logout();
             }
 
             mPreparedUri = uri;
@@ -191,6 +195,7 @@ public class SpotifyService extends Service {
         @Override
         public void onLoggedOut() {
             Log.d(TAG, "User logged out");
+            mPlayer.login(mCurrentAccessToken);
         }
 
         @Override
