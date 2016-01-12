@@ -69,7 +69,9 @@ public class SpotifyService extends Service {
         @Override
         public void prepare(String uri, String accessToken, String accessTokenSecret,
                 long accessTokenExpires) throws RemoteException {
+            mPreparedUri = uri;
             if (mPlayer == null) {
+                Log.d(TAG, "First call to prepare. Initializing Player object...");
                 mCurrentAccessToken = accessToken;
                 Config playerConfig = new Config(SpotifyService.this, accessToken, CLIENT_ID);
                 Player.Builder builder = new Player.Builder(playerConfig);
@@ -79,9 +81,6 @@ public class SpotifyService extends Service {
                             public void onInitialized(Player player) {
                                 player.addConnectionStateCallback(mConnectionStateCallback);
                                 player.addPlayerNotificationCallback(mPlayerNotificationCallback);
-                                if (mIsPlaying) {
-                                    player.play(mPreparedUri);
-                                }
                             }
 
                             @Override
@@ -91,22 +90,23 @@ public class SpotifyService extends Service {
                             }
                         });
             } else if (accessToken != null && !accessToken.equals(mCurrentAccessToken)) {
+                Log.d(TAG, "The access token has changed. Updating Player object...");
                 mCurrentAccessToken = accessToken;
                 mPlayer.logout();
+            } else {
+                Log.d(TAG, "Everything's set up and ready to go.");
+                broadcastToAll(new BroadcastRunnable() {
+                    @Override
+                    public void broadcast(IPluginServiceCallback callback) throws RemoteException {
+                        callback.onPrepared();
+                    }
+                });
             }
-
-            mPreparedUri = uri;
-
-            broadcastToAll(new BroadcastRunnable() {
-                @Override
-                public void broadcast(IPluginServiceCallback callback) throws RemoteException {
-                    callback.onPrepared();
-                }
-            });
         }
 
         @Override
         public void play() throws RemoteException {
+            Log.d(TAG, "play called");
             mIsPlaying = true;
             if (mPlayer != null) {
                 try {
@@ -114,8 +114,10 @@ public class SpotifyService extends Service {
                         @Override
                         public void onPlayerState(PlayerState playerState) {
                             if (!playerState.trackUri.equals(mPreparedUri)) {
+                                Log.d(TAG, "play - playing new track uri");
                                 mPlayer.play(mPreparedUri);
                             } else if (!playerState.playing) {
+                                Log.d(TAG, "play - resuming playback");
                                 mPlayer.resume();
                             }
                         }
@@ -128,9 +130,11 @@ public class SpotifyService extends Service {
 
         @Override
         public void pause() throws RemoteException {
+            Log.d(TAG, "pause called");
             mIsPlaying = false;
             if (mPlayer != null) {
                 try {
+                    Log.d(TAG, "pause - pausing playback");
                     mPlayer.pause();
                 } catch (RejectedExecutionException e) {
                     Log.e(TAG, "pause - " + e.getLocalizedMessage());
@@ -140,8 +144,10 @@ public class SpotifyService extends Service {
 
         @Override
         public void seek(final int ms) throws RemoteException {
+            Log.d(TAG, "seek()");
             if (mPlayer != null) {
                 try {
+                    Log.d(TAG, "seek - seeking to " + ms + "ms");
                     mPlayer.seekToPosition(ms);
 
                     broadcastToAll(new BroadcastRunnable() {
@@ -190,6 +196,12 @@ public class SpotifyService extends Service {
         @Override
         public void onLoggedIn() {
             Log.d(TAG, "User logged in");
+            broadcastToAll(new BroadcastRunnable() {
+                @Override
+                public void broadcast(IPluginServiceCallback callback) throws RemoteException {
+                    callback.onPrepared();
+                }
+            });
         }
 
         @Override
