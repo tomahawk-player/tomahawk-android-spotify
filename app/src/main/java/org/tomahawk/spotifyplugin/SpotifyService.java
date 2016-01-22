@@ -9,24 +9,83 @@ import com.spotify.sdk.android.player.PlayerState;
 import com.spotify.sdk.android.player.PlayerStateCallback;
 import com.spotify.sdk.android.player.Spotify;
 
-import org.tomahawk.aidl.IPluginService;
-import org.tomahawk.aidl.IPluginServiceCallback;
-
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.net.wifi.WifiManager;
+import android.os.Bundle;
 import android.os.IBinder;
-import android.os.RemoteCallbackList;
+import android.os.Message;
+import android.os.Messenger;
 import android.os.RemoteException;
 import android.util.Log;
 
+import java.util.ArrayList;
 import java.util.concurrent.RejectedExecutionException;
 
 public class SpotifyService extends Service {
 
     // Used for debug logging
     private static final String TAG = SpotifyService.class.getSimpleName();
+
+    /**
+     * Command to the service to register a client, receiving callbacks from the service. The
+     * Message's replyTo field must be a Messenger of the client where callbacks should be sent.
+     */
+    static final int MSG_REGISTER_CLIENT = 1;
+
+    /**
+     * Command to the service to unregister a client, ot stop receiving callbacks from the service.
+     * The Message's replyTo field must be a Messenger of the client as previously given with
+     * MSG_REGISTER_CLIENT.
+     */
+    static final int MSG_UNREGISTER_CLIENT = 2;
+
+    /**
+     * Commands to the service
+     */
+    private static final int MSG_PREPARE = 100;
+
+    private static final String MSG_PREPARE_ARG_URI = "uri";
+
+    private static final String MSG_PREPARE_ARG_ACCESSTOKEN = "accessToken";
+
+    private static final String MSG_PREPARE_ARG_ACCESSTOKENEXPIRES = "accessTokenExpires";
+
+    private static final int MSG_PLAY = 101;
+
+    private static final int MSG_PAUSE = 102;
+
+    private static final int MSG_SEEK = 103;
+
+    private static final String MSG_SEEK_ARG_MS = "ms";
+
+    private static final int MSG_SETBITRATE = 104;
+
+    private static final String MSG_SETBITRATE_ARG_MODE = "mode";
+
+    /**
+     * Commands to the client
+     */
+    private static final int MSG_ONPAUSE = 200;
+
+    private static final int MSG_ONPLAY = 201;
+
+    private static final int MSG_ONPREPARED = 202;
+
+    protected static final String MSG_ONPREPARED_ARG_URI = "uri";
+
+    private static final int MSG_ONPLAYERENDOFTRACK = 203;
+
+    private static final int MSG_ONPLAYERPOSITIONCHANGED = 204;
+
+    private static final String MSG_ONPLAYERPOSITIONCHANGED_ARG_POSITION = "position";
+
+    private static final String MSG_ONPLAYERPOSITIONCHANGED_ARG_TIMESTAMP = "timestamp";
+
+    private static final int MSG_ONERROR = 205;
+
+    private static final String MSG_ONERROR_ARG_MESSAGE = "message";
 
     public static final String CLIENT_ID = "";
 
@@ -36,178 +95,181 @@ public class SpotifyService extends Service {
 
     private String mPreparedUri;
 
-    private boolean mIsPlaying;
-
     private String mCurrentAccessToken;
 
     /**
-     * This is a list of callbacks that have been registered with the service.  Note that this is
-     * package scoped (instead of private) so that it can be accessed more efficiently from inner
-     * classes.
+     * Keeps track of all current registered clients.
      */
-    final RemoteCallbackList<IPluginServiceCallback> mCallbacks = new RemoteCallbackList<>();
+    ArrayList<Messenger> mClients = new ArrayList<>();
 
     /**
-     * The IRemoteInterface is defined through IDL
+     * Target we publish for clients to send messages to IncomingHandler.
      */
-    private final IPluginService.Stub mBinder = new IPluginService.Stub() {
+    final Messenger mMessenger = new Messenger(new IncomingHandler(this));
 
-        @Override
-        public void registerCallback(IPluginServiceCallback cb) {
-            if (cb != null) {
-                mCallbacks.register(cb);
-            }
+    /**
+     * Handler of incoming messages from clients.
+     */
+    private static class IncomingHandler extends WeakReferenceHandler<SpotifyService> {
+
+        public IncomingHandler(SpotifyService referencedObject) {
+            super(referencedObject);
         }
 
         @Override
-        public void unregisterCallback(IPluginServiceCallback cb) {
-            if (cb != null) {
-                mCallbacks.unregister(cb);
-            }
-        }
+        public void handleMessage(Message msg) {
+            final SpotifyService s = getReferencedObject();
+            switch (msg.what) {
+                case MSG_REGISTER_CLIENT:
+                    s.mClients.add(msg.replyTo);
+                    break;
+                case MSG_UNREGISTER_CLIENT:
+                    s.mClients.remove(msg.replyTo);
+                    break;
+                case MSG_PREPARE:
+                    String uri = msg.getData().getString(MSG_PREPARE_ARG_URI);
+                    String accessToken =
+                            msg.getData().getString(MSG_PREPARE_ARG_ACCESSTOKEN);
 
-        @Override
-        public void prepare(String uri, String accessToken, String accessTokenSecret,
-                long accessTokenExpires) throws RemoteException {
-            mPreparedUri = uri;
-            if (mPlayer == null) {
-                Log.d(TAG, "First call to prepare. Initializing Player object...");
-                mCurrentAccessToken = accessToken;
-                Config playerConfig = new Config(SpotifyService.this, accessToken, CLIENT_ID);
-                Player.Builder builder = new Player.Builder(playerConfig);
-                mPlayer = Spotify.getPlayer(builder, this,
-                        new Player.InitializationObserver() {
-                            @Override
-                            public void onInitialized(Player player) {
-                                player.addConnectionStateCallback(mConnectionStateCallback);
-                                player.addPlayerNotificationCallback(mPlayerNotificationCallback);
-                            }
+                    s.mPreparedUri = uri;
+                    if (s.mPlayer == null) {
+                        Log.d(TAG, "First call to prepare. Initializing Player object...");
+                        s.mCurrentAccessToken = accessToken;
+                        Config playerConfig = new Config(s, accessToken, CLIENT_ID);
+                        Player.Builder builder = new Player.Builder(playerConfig);
+                        s.mPlayer = Spotify.getPlayer(builder, this,
+                                new Player.InitializationObserver() {
+                                    @Override
+                                    public void onInitialized(Player player) {
+                                        player.addConnectionStateCallback(
+                                                s.mConnectionStateCallback);
+                                        player.addPlayerNotificationCallback(
+                                                s.mPlayerNotificationCallback);
+                                        Bundle args = new Bundle();
+                                        args.putString(MSG_ONPREPARED_ARG_URI, s.mPreparedUri);
+                                        s.broadcastToAll(MSG_ONPREPARED, args);
+                                    }
 
-                            @Override
-                            public void onError(Throwable throwable) {
-                                Log.e(TAG,
-                                        "Could not initialize player: " + throwable.getMessage());
-                            }
-                        });
-            } else if (accessToken != null && !accessToken.equals(mCurrentAccessToken)) {
-                Log.d(TAG, "The access token has changed. Updating Player object...");
-                mCurrentAccessToken = accessToken;
-                mPlayer.logout();
-            } else {
-                Log.d(TAG, "Everything's set up and ready to go.");
-                broadcastToAll(new BroadcastRunnable() {
-                    @Override
-                    public void broadcast(IPluginServiceCallback callback) throws RemoteException {
-                        callback.onPrepared();
+                                    @Override
+                                    public void onError(Throwable throwable) {
+                                        Log.e(TAG,
+                                                "Could not initialize player: " + throwable
+                                                        .getMessage());
+                                    }
+                                });
+                    } else if (accessToken != null && !accessToken.equals(s.mCurrentAccessToken)) {
+                        Log.d(TAG, "The access token has changed. Updating Player object...");
+                        s.mCurrentAccessToken = accessToken;
+                        s.mPlayer.logout();
+                    } else {
+                        Log.d(TAG, "Everything's set up and ready to go.");
+                        Bundle args = new Bundle();
+                        args.putString(MSG_ONPREPARED_ARG_URI, s.mPreparedUri);
+                        s.broadcastToAll(MSG_ONPREPARED, args);
                     }
-                });
-            }
-        }
-
-        @Override
-        public void play() throws RemoteException {
-            Log.d(TAG, "play called");
-            mIsPlaying = true;
-            if (mPlayer != null) {
-                try {
-                    mPlayer.getPlayerState(new PlayerStateCallback() {
-                        @Override
-                        public void onPlayerState(PlayerState playerState) {
-                            if (!playerState.trackUri.equals(mPreparedUri)) {
-                                Log.d(TAG, "play - playing new track uri");
-                                mPlayer.play(mPreparedUri);
-                            } else if (!playerState.playing) {
-                                Log.d(TAG, "play - resuming playback");
-                                mPlayer.resume();
-                            }
+                    break;
+                case MSG_PLAY:
+                    Log.d(TAG, "play called");
+                    if (s.mPlayer != null) {
+                        try {
+                            s.mPlayer.getPlayerState(new PlayerStateCallback() {
+                                @Override
+                                public void onPlayerState(PlayerState playerState) {
+                                    if (!playerState.trackUri.equals(s.mPreparedUri)) {
+                                        Log.d(TAG, "play - playing new track uri");
+                                        s.mPlayer.play(s.mPreparedUri);
+                                    } else if (!playerState.playing) {
+                                        Log.d(TAG, "play - resuming playback");
+                                        s.mPlayer.resume();
+                                    }
+                                }
+                            });
+                        } catch (RejectedExecutionException e) {
+                            Log.e(TAG, "play - " + e.getLocalizedMessage());
                         }
-                    });
-                } catch (RejectedExecutionException e) {
-                    Log.e(TAG, "play - " + e.getLocalizedMessage());
-                }
-            }
-        }
-
-        @Override
-        public void pause() throws RemoteException {
-            Log.d(TAG, "pause called");
-            mIsPlaying = false;
-            if (mPlayer != null) {
-                try {
-                    Log.d(TAG, "pause - pausing playback");
-                    mPlayer.pause();
-                } catch (RejectedExecutionException e) {
-                    Log.e(TAG, "pause - " + e.getLocalizedMessage());
-                }
-            }
-        }
-
-        @Override
-        public void seek(final int ms) throws RemoteException {
-            Log.d(TAG, "seek()");
-            if (mPlayer != null) {
-                try {
-                    Log.d(TAG, "seek - seeking to " + ms + "ms");
-                    mPlayer.seekToPosition(ms);
-
-                    broadcastToAll(new BroadcastRunnable() {
-                        @Override
-                        public void broadcast(IPluginServiceCallback callback)
-                                throws RemoteException {
-                            callback.onPlayerPositionChanged(ms, System.currentTimeMillis());
-                        }
-                    });
-                } catch (RejectedExecutionException e) {
-                    Log.e(TAG, "seek - " + e.getLocalizedMessage());
-                }
-            }
-        }
-
-        @Override
-        public void setBitRate(int mode) throws RemoteException {
-            if (mPlayer != null) {
-                PlaybackBitrate bitrate = null;
-                switch (mode) {
-                    case 0:
-                        bitrate = PlaybackBitrate.BITRATE_LOW;
-                        break;
-                    case 1:
-                        bitrate = PlaybackBitrate.BITRATE_NORMAL;
-                        break;
-                    case 2:
-                        bitrate = PlaybackBitrate.BITRATE_HIGH;
-                        break;
-                }
-                if (bitrate != null) {
-                    try {
-                        mPlayer.setPlaybackBitrate(bitrate);
-                    } catch (RejectedExecutionException e) {
-                        Log.e(TAG, "setBitrate - " + e.getLocalizedMessage());
                     }
-                } else {
-                    Log.d(TAG, "Invalid bitratemode given");
-                }
+                    break;
+                case MSG_PAUSE:
+                    Log.d(TAG, "pause called");
+                    if (s.mPlayer != null) {
+                        try {
+                            Log.d(TAG, "pause - pausing playback");
+                            s.mPlayer.pause();
+                        } catch (RejectedExecutionException e) {
+                            Log.e(TAG, "pause - " + e.getLocalizedMessage());
+                        }
+                    }
+                    break;
+                case MSG_SEEK:
+                    int ms = msg.getData().getInt(MSG_SEEK_ARG_MS);
+
+                    Log.d(TAG, "seek()");
+                    if (s.mPlayer != null) {
+                        try {
+                            Log.d(TAG, "seek - seeking to " + ms + "ms");
+                            s.mPlayer.seekToPosition(ms);
+
+                            Bundle args = new Bundle();
+                            args.putInt(MSG_ONPLAYERPOSITIONCHANGED_ARG_POSITION, ms);
+                            args.putLong(MSG_ONPLAYERPOSITIONCHANGED_ARG_TIMESTAMP,
+                                    System.currentTimeMillis());
+                            s.broadcastToAll(MSG_ONPLAYERPOSITIONCHANGED, args);
+                        } catch (RejectedExecutionException e) {
+                            Log.e(TAG, "seek - " + e.getLocalizedMessage());
+                        }
+                    }
+                    break;
+                case MSG_SETBITRATE:
+                    int mode = msg.getData().getInt(MSG_SETBITRATE_ARG_MODE);
+
+                    if (s.mPlayer != null) {
+                        PlaybackBitrate bitrate = null;
+                        switch (mode) {
+                            case 0:
+                                bitrate = PlaybackBitrate.BITRATE_LOW;
+                                break;
+                            case 1:
+                                bitrate = PlaybackBitrate.BITRATE_NORMAL;
+                                break;
+                            case 2:
+                                bitrate = PlaybackBitrate.BITRATE_HIGH;
+                                break;
+                        }
+                        if (bitrate != null) {
+                            try {
+                                s.mPlayer.setPlaybackBitrate(bitrate);
+                            } catch (RejectedExecutionException e) {
+                                Log.e(TAG, "setBitrate - " + e.getLocalizedMessage());
+                            }
+                        } else {
+                            Log.d(TAG, "Invalid bitratemode given");
+                        }
+                    }
+                    break;
+                default:
+                    super.handleMessage(msg);
             }
         }
-    };
+    }
 
     private final ConnectionStateCallback mConnectionStateCallback = new ConnectionStateCallback() {
 
         @Override
         public void onLoggedIn() {
             Log.d(TAG, "User logged in");
-            broadcastToAll(new BroadcastRunnable() {
-                @Override
-                public void broadcast(IPluginServiceCallback callback) throws RemoteException {
-                    callback.onPrepared();
-                }
-            });
+            Bundle args = new Bundle();
+            args.putString(MSG_ONPREPARED_ARG_URI, mPreparedUri);
+            broadcastToAll(MSG_ONPREPARED, args);
         }
 
         @Override
         public void onLoggedOut() {
             Log.d(TAG, "User logged out");
-            mPlayer.login(mCurrentAccessToken);
+            if (mPlayer != null) {
+                mPlayer.login(mCurrentAccessToken);
+            } else {
+                Log.e(TAG, "Wasn't able to login again, because mPlayer is null.");
+            }
         }
 
         @Override
@@ -233,41 +295,29 @@ public class SpotifyService extends Service {
         public void onPlaybackEvent(final EventType eventType, PlayerState playerState) {
             Log.d(TAG, "Playback event received: " + eventType.name());
             if (playerState.trackUri.equals(mPreparedUri)) {
-                broadcastToAll(new BroadcastRunnable() {
-                    @Override
-                    public void broadcast(IPluginServiceCallback callback) throws RemoteException {
-                        switch (eventType) {
-                            case TRACK_END:
-                                callback.onPlayerEndOfTrack();
-                                break;
-                            case PAUSE:
-                                callback.onPause();
-                                break;
-                            case PLAY:
-                                callback.onPlay();
-                                break;
-                        }
-                    }
-                });
+                switch (eventType) {
+                    case TRACK_END:
+                        broadcastToAll(MSG_ONPLAYERENDOFTRACK);
+                        break;
+                    case PAUSE:
+                        broadcastToAll(MSG_ONPAUSE);
+                        break;
+                    case PLAY:
+                        broadcastToAll(MSG_ONPLAY);
+                        break;
+                }
             }
         }
 
         @Override
         public void onPlaybackError(final ErrorType errorType, final String errorDetails) {
             Log.e(TAG, "Playback error received: " + errorType.name());
-            broadcastToAll(new BroadcastRunnable() {
-                @Override
-                public void broadcast(IPluginServiceCallback callback) throws RemoteException {
-                    callback.onError(errorType.name() + ": " + errorDetails);
-                }
-            });
+            Bundle args = new Bundle();
+            args.putString(MSG_ONERROR_ARG_MESSAGE,
+                    errorType.name() + ": " + errorDetails);
+            broadcastToAll(MSG_ONERROR, args);
         }
     };
-
-    interface BroadcastRunnable {
-
-        void broadcast(IPluginServiceCallback callback) throws RemoteException;
-    }
 
     @Override
     public void onCreate() {
@@ -282,44 +332,50 @@ public class SpotifyService extends Service {
     @Override
     public void onDestroy() {
         if (mPlayer != null) {
+            mPlayer.removeConnectionStateCallback(mConnectionStateCallback);
+            mPlayer.removePlayerNotificationCallback(mPlayerNotificationCallback);
             mPlayer.pause();
             mPlayer = null;
         }
         Spotify.destroyPlayer(this);
         mWifiLock.release();
-        mCallbacks.kill();
         Log.d(TAG, "SpotifyService has been destroyed");
 
         super.onDestroy();
     }
 
+    /**
+     * When binding to the service, we return an interface to our messenger for sending messages to
+     * the service.
+     */
     @Override
     public IBinder onBind(Intent intent) {
         Log.d(TAG, "Client has been bound to SpotifyService");
-        if (IPluginService.class.getName().equals(intent.getAction())) {
-            return mBinder;
-        }
-        return null;
+        return mMessenger.getBinder();
     }
 
     @Override
     public boolean onUnbind(Intent intent) {
         Log.d(TAG, "Client has been unbound from SpotifyService");
-        stopSelf();
-        return false;
+        return super.onUnbind(intent);
     }
 
-    private void broadcastToAll(BroadcastRunnable runnable) {
-        // Broadcast to all clients
-        final int N = mCallbacks.beginBroadcast();
-        for (int i = 0; i < N; i++) {
+    private void broadcastToAll(int what) {
+        broadcastToAll(what, null);
+    }
+
+    private void broadcastToAll(int what, Bundle bundle) {
+        for (int i = mClients.size() - 1; i >= 0; i--) {
             try {
-                runnable.broadcast(mCallbacks.getBroadcastItem(i));
+                Message message = Message.obtain(null, what);
+                message.setData(bundle);
+                mClients.get(i).send(message);
             } catch (RemoteException e) {
-                // The RemoteCallbackList will take care of removing
-                // the dead object for us.
+                // The client is dead.  Remove it from the list;
+                // we are going through the list from back to front
+                // so this is safe to do inside the loop.
+                mClients.remove(i);
             }
         }
-        mCallbacks.finishBroadcast();
     }
 }

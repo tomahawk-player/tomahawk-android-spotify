@@ -11,7 +11,7 @@
 
         <service android:name="org.tomahawk.spotifyplugin.SpotifyService">
             <intent-filter>
-                <action android:name="org.tomahawk.aidl.IPluginService"/>
+                <action android:name="org.tomahawk.spotifyplugin.BindToService"/>
             </intent-filter>
         </service>
 

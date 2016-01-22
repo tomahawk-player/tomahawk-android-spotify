@@ -15,7 +15,7 @@ import android.util.Log;
 @ReportsCrashes(
         httpMethod = HttpSender.Method.PUT,
         reportType = HttpSender.Type.JSON,
-        formUri = "http://crash-stats.tomahawk-player.org:5984/acra-tomahawkandroid/_design/acra-storage/_update/report",
+        formUri = "http://crash-stats.tomahawk-player.org:5984/acra-tomahawkspotifyplugin/_design/acra-storage/_update/report",
         formUriBasicAuthLogin = "reporter",
         formUriBasicAuthPassword = "unknackbar",
         excludeMatchingSharedPreferencesKeys = {".*_config$"},
