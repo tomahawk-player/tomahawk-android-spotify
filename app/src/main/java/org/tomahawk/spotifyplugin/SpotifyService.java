@@ -305,6 +305,11 @@ public class SpotifyService extends Service {
                     case PLAY:
                         broadcastToAll(MSG_ONPLAY);
                         break;
+                    case LOST_PERMISSION:
+                        Bundle args = new Bundle();
+                        args.putString(MSG_ONERROR_ARG_MESSAGE,
+                                "Playback Error - Spotify is currently being used on a different device.");
+                        broadcastToAll(MSG_ONERROR, args);
                 }
             }
         }
