@@ -95,8 +95,6 @@ public class SpotifyService extends Service {
 
     private String mPreparedUri;
 
-    private String mCurrentAccessToken;
-
     /**
      * Keeps track of all current registered clients.
      */
@@ -132,41 +130,34 @@ public class SpotifyService extends Service {
                             msg.getData().getString(MSG_PREPARE_ARG_ACCESSTOKEN);
 
                     s.mPreparedUri = uri;
-                    if (s.mPlayer == null) {
-                        Log.d(TAG, "First call to prepare. Initializing Player object...");
-                        s.mCurrentAccessToken = accessToken;
-                        Config playerConfig = new Config(s, accessToken, CLIENT_ID);
-                        Player.Builder builder = new Player.Builder(playerConfig);
-                        s.mPlayer = Spotify.getPlayer(builder, this,
-                                new Player.InitializationObserver() {
-                                    @Override
-                                    public void onInitialized(Player player) {
-                                        player.addConnectionStateCallback(
-                                                s.mConnectionStateCallback);
-                                        player.addPlayerNotificationCallback(
-                                                s.mPlayerNotificationCallback);
-                                        Bundle args = new Bundle();
-                                        args.putString(MSG_ONPREPARED_ARG_URI, s.mPreparedUri);
-                                        s.broadcastToAll(MSG_ONPREPARED, args);
-                                    }
-
-                                    @Override
-                                    public void onError(Throwable throwable) {
-                                        Log.e(TAG,
-                                                "Could not initialize player: " + throwable
-                                                        .getMessage());
-                                    }
-                                });
-                    } else if (accessToken != null && !accessToken.equals(s.mCurrentAccessToken)) {
-                        Log.d(TAG, "The access token has changed. Updating Player object...");
-                        s.mCurrentAccessToken = accessToken;
-                        s.mPlayer.logout();
-                    } else {
-                        Log.d(TAG, "Everything's set up and ready to go.");
-                        Bundle args = new Bundle();
-                        args.putString(MSG_ONPREPARED_ARG_URI, s.mPreparedUri);
-                        s.broadcastToAll(MSG_ONPREPARED, args);
+                    if (s.mPlayer != null) {
+                        s.mPlayer.removeConnectionStateCallback(s.mConnectionStateCallback);
+                        s.mPlayer.removePlayerNotificationCallback(s.mPlayerNotificationCallback);
+                        s.mPlayer.pause();
+                        s.mPlayer = null;
                     }
+                    Log.d(TAG, "(Re-)initializing Player object...");
+                    Config playerConfig = new Config(s, accessToken, CLIENT_ID);
+                    Player.Builder builder = new Player.Builder(playerConfig);
+                    s.mPlayer = Spotify.getPlayer(builder, this,
+                            new Player.InitializationObserver() {
+                                @Override
+                                public void onInitialized(Player player) {
+                                    player.addConnectionStateCallback(
+                                            s.mConnectionStateCallback);
+                                    player.addPlayerNotificationCallback(
+                                            s.mPlayerNotificationCallback);
+                                    Bundle args = new Bundle();
+                                    args.putString(MSG_ONPREPARED_ARG_URI, s.mPreparedUri);
+                                    s.broadcastToAll(MSG_ONPREPARED, args);
+                                }
+
+                                @Override
+                                public void onError(Throwable throwable) {
+                                    Log.e(TAG, "Could not initialize player: "
+                                            + throwable.getMessage());
+                                }
+                            });
                     break;
                 case MSG_PLAY:
                     Log.d(TAG, "play called");
@@ -257,19 +248,11 @@ public class SpotifyService extends Service {
         @Override
         public void onLoggedIn() {
             Log.d(TAG, "User logged in");
-            Bundle args = new Bundle();
-            args.putString(MSG_ONPREPARED_ARG_URI, mPreparedUri);
-            broadcastToAll(MSG_ONPREPARED, args);
         }
 
         @Override
         public void onLoggedOut() {
             Log.d(TAG, "User logged out");
-            if (mPlayer != null) {
-                mPlayer.login(mCurrentAccessToken);
-            } else {
-                Log.e(TAG, "Wasn't able to login again, because mPlayer is null.");
-            }
         }
 
         @Override
@@ -337,8 +320,6 @@ public class SpotifyService extends Service {
     @Override
     public void onDestroy() {
         if (mPlayer != null) {
-            mPlayer.removeConnectionStateCallback(mConnectionStateCallback);
-            mPlayer.removePlayerNotificationCallback(mPlayerNotificationCallback);
             mPlayer.pause();
             mPlayer = null;
         }

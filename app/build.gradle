@@ -8,8 +8,8 @@ android {
         applicationId "org.tomahawk.spotifyplugin"
         minSdkVersion 15
         targetSdkVersion 22
-        versionCode 40
-        versionName "0.40"
+        versionCode 41
+        versionName "0.41"
     }
 
     /*
@@ -97,7 +97,7 @@ if (propFile.canRead()) {
 }
 
 dependencies {
-    compile(name: "spotify-player-1.0.0-beta12", ext: "aar")
+    compile(name: "spotify-player-1.0.0-beta11", ext: "aar")
     compile("ch.acra:acra:4.6.2") {
         transitive = false
     }
