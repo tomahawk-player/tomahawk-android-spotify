@@ -104,3 +104,6 @@ bin-release/
 signingconfig.gradle
 signing.properties
 *.keystore
+
+###API_key###
+secrets.properties

@@ -87,8 +87,6 @@ public class SpotifyService extends Service {
 
     private static final String MSG_ONERROR_ARG_MESSAGE = "message";
 
-    public static final String CLIENT_ID = "";
-
     private WifiManager.WifiLock mWifiLock;
 
     private Player mPlayer;
@@ -137,7 +135,7 @@ public class SpotifyService extends Service {
                         s.mPlayer = null;
                     }
                     Log.d(TAG, "(Re-)initializing Player object...");
-                    Config playerConfig = new Config(s, accessToken, CLIENT_ID);
+                    Config playerConfig = new Config(s, accessToken, BuildConfig.CLIENT_ID);
                     Player.Builder builder = new Player.Builder(playerConfig);
                     s.mPlayer = Spotify.getPlayer(builder, this,
                             new Player.InitializationObserver() {

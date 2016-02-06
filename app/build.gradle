@@ -37,6 +37,7 @@ android {
                 output.outputFile = new File(outputFile.parent, fileName)
             }
         }
+        variant.buildConfigField "String", "CLIENT_ID", "\"" + getClientId() + "\""
     }
 
     signingConfigs {
@@ -77,6 +78,16 @@ android {
             versionName getNewVersionName() + "_arm"
             versionCode Integer.parseInt("1$defaultConfig.versionCode")
         }
+    }
+}
+
+def getClientId() {
+    def Properties props = new Properties()
+    def propFile = file('secrets.properties')
+    if (propFile.canRead()) {
+        props.load(new FileInputStream(propFile))
+
+        return props['CLIENT_ID']
     }
 }
 
