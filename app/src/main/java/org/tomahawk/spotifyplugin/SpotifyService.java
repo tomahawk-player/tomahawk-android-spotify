@@ -173,6 +173,7 @@ public class SpotifyService extends Service {
                                         Log.d(TAG, "play - resuming playback");
                                         s.mPlayer.resume();
                                     }
+                                    s.reportCurrentPosition(s.mPlayer);
                                 }
                             });
                         } catch (RejectedExecutionException e) {
@@ -197,14 +198,10 @@ public class SpotifyService extends Service {
                     Log.d(TAG, "seek()");
                     if (s.mPlayer != null) {
                         try {
+                            ms = Math.max(ms, 1);
                             Log.d(TAG, "seek - seeking to " + ms + "ms");
                             s.mPlayer.seekToPosition(ms);
-
-                            Bundle args = new Bundle();
-                            args.putInt(MSG_ONPLAYERPOSITIONCHANGED_ARG_POSITION, ms);
-                            args.putLong(MSG_ONPLAYERPOSITIONCHANGED_ARG_TIMESTAMP,
-                                    System.currentTimeMillis());
-                            s.broadcastToAll(MSG_ONPLAYERPOSITIONCHANGED, args);
+                            s.reportCurrentPosition(s.mPlayer);
                         } catch (RejectedExecutionException e) {
                             Log.e(TAG, "seek - " + e.getLocalizedMessage());
                         }
@@ -344,6 +341,24 @@ public class SpotifyService extends Service {
     public boolean onUnbind(Intent intent) {
         Log.d(TAG, "Client has been unbound from SpotifyService");
         return super.onUnbind(intent);
+    }
+
+    private void reportCurrentPosition(Player player) {
+        if (player != null) {
+            player.getPlayerState(new PlayerStateCallback() {
+                @Override
+                public void onPlayerState(PlayerState playerState) {
+                    Bundle args = new Bundle();
+                    args.putInt(MSG_ONPLAYERPOSITIONCHANGED_ARG_POSITION,
+                            playerState.positionInMs);
+                    args.putLong(MSG_ONPLAYERPOSITIONCHANGED_ARG_TIMESTAMP,
+                            System.currentTimeMillis());
+                    broadcastToAll(MSG_ONPLAYERPOSITIONCHANGED, args);
+                }
+            });
+        } else {
+            Log.e(TAG, "Wasn't able to reportCurrentPosition, because given Player is was null!");
+        }
     }
 
     private void broadcastToAll(int what) {
