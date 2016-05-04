@@ -145,9 +145,6 @@ public class SpotifyService extends Service {
                                             s.mConnectionStateCallback);
                                     player.addPlayerNotificationCallback(
                                             s.mPlayerNotificationCallback);
-                                    Bundle args = new Bundle();
-                                    args.putString(MSG_ONPREPARED_ARG_URI, s.mPreparedUri);
-                                    s.broadcastToAll(MSG_ONPREPARED, args);
                                 }
 
                                 @Override
@@ -156,6 +153,8 @@ public class SpotifyService extends Service {
                                             + throwable.getMessage());
                                 }
                             });
+                    s.mPlayer.play(s.mPreparedUri);
+                    s.mPlayer.pause();
                     break;
                 case MSG_PLAY:
                     Log.d(TAG, "play called");
@@ -273,7 +272,13 @@ public class SpotifyService extends Service {
         public void onPlaybackEvent(final EventType eventType, PlayerState playerState) {
             Log.d(TAG, "Playback event received: " + eventType.name());
             if (playerState.trackUri.equals(mPreparedUri)) {
+                Bundle args;
                 switch (eventType) {
+                    case TRACK_START:
+                        args = new Bundle();
+                        args.putString(MSG_ONPREPARED_ARG_URI, mPreparedUri);
+                        broadcastToAll(MSG_ONPREPARED, args);
+                        break;
                     case TRACK_END:
                         broadcastToAll(MSG_ONPLAYERENDOFTRACK);
                         break;
@@ -284,7 +289,7 @@ public class SpotifyService extends Service {
                         broadcastToAll(MSG_ONPLAY);
                         break;
                     case LOST_PERMISSION:
-                        Bundle args = new Bundle();
+                        args = new Bundle();
                         args.putString(MSG_ONERROR_ARG_MESSAGE,
                                 "Playback Error - Spotify is currently being used on a different device.");
                         broadcastToAll(MSG_ONERROR, args);
