@@ -91,6 +91,8 @@ public class SpotifyService extends Service {
 
     private Player mPlayer;
 
+    private String mPreparingUri;
+
     private String mPreparedUri;
 
     /**
@@ -127,7 +129,6 @@ public class SpotifyService extends Service {
                     String accessToken =
                             msg.getData().getString(MSG_PREPARE_ARG_ACCESSTOKEN);
 
-                    s.mPreparedUri = uri;
                     if (s.mPlayer != null) {
                         s.mPlayer.removeConnectionStateCallback(s.mConnectionStateCallback);
                         s.mPlayer.removePlayerNotificationCallback(s.mPlayerNotificationCallback);
@@ -153,8 +154,10 @@ public class SpotifyService extends Service {
                                             + throwable.getMessage());
                                 }
                             });
-                    s.mPlayer.play(s.mPreparedUri);
-                    s.mPlayer.pause();
+                    s.reportPosition(0);
+                    Log.d(TAG, "Preparing uri: " + uri);
+                    s.mPreparingUri = uri;
+                    s.mPlayer.play(s.mPreparingUri);
                     break;
                 case MSG_PLAY:
                     Log.d(TAG, "play called");
@@ -163,14 +166,10 @@ public class SpotifyService extends Service {
                             s.mPlayer.getPlayerState(new PlayerStateCallback() {
                                 @Override
                                 public void onPlayerState(PlayerState playerState) {
-                                    if (!playerState.trackUri.equals(s.mPreparedUri)) {
-                                        Log.d(TAG, "play - playing new track uri");
-                                        s.mPlayer.play(s.mPreparedUri);
-                                    } else if (!playerState.playing) {
+                                    if (!playerState.playing) {
                                         Log.d(TAG, "play - resuming playback");
                                         s.mPlayer.resume();
                                     }
-                                    s.reportCurrentPosition(s.mPlayer);
                                 }
                             });
                         } catch (RejectedExecutionException e) {
@@ -182,8 +181,15 @@ public class SpotifyService extends Service {
                     Log.d(TAG, "pause called");
                     if (s.mPlayer != null) {
                         try {
-                            Log.d(TAG, "pause - pausing playback");
-                            s.mPlayer.pause();
+                            s.mPlayer.getPlayerState(new PlayerStateCallback() {
+                                @Override
+                                public void onPlayerState(PlayerState playerState) {
+                                    if (playerState.playing) {
+                                        Log.d(TAG, "pause - pausing playback");
+                                        s.mPlayer.pause();
+                                    }
+                                }
+                            });
                         } catch (RejectedExecutionException e) {
                             Log.e(TAG, "pause - " + e.getLocalizedMessage());
                         }
@@ -271,28 +277,40 @@ public class SpotifyService extends Service {
         @Override
         public void onPlaybackEvent(final EventType eventType, PlayerState playerState) {
             Log.d(TAG, "Playback event received: " + eventType.name());
-            if (playerState.trackUri.equals(mPreparedUri)) {
-                Bundle args;
-                switch (eventType) {
-                    case TRACK_START:
-                        args = new Bundle();
-                        args.putString(MSG_ONPREPARED_ARG_URI, mPreparedUri);
-                        broadcastToAll(MSG_ONPREPARED, args);
-                        break;
-                    case TRACK_END:
-                        broadcastToAll(MSG_ONPLAYERENDOFTRACK);
-                        break;
-                    case PAUSE:
-                        broadcastToAll(MSG_ONPAUSE);
-                        break;
-                    case PLAY:
-                        broadcastToAll(MSG_ONPLAY);
-                        break;
-                    case LOST_PERMISSION:
-                        args = new Bundle();
-                        args.putString(MSG_ONERROR_ARG_MESSAGE,
-                                "Playback Error - Spotify is currently being used on a different device.");
-                        broadcastToAll(MSG_ONERROR, args);
+            if (playerState.trackUri != null) {
+                if (playerState.trackUri.equals(mPreparingUri)) {
+                    Bundle args;
+                    switch (eventType) {
+                        case TRACK_START:
+                            Log.d(TAG, "Successfully prepared uri: " + mPreparingUri);
+                            mPreparedUri = mPreparingUri;
+                            mPreparingUri = null;
+                            mPlayer.pause();
+                            args = new Bundle();
+                            args.putString(MSG_ONPREPARED_ARG_URI, mPreparedUri);
+                            broadcastToAll(MSG_ONPREPARED, args);
+                            reportCurrentPosition(mPlayer);
+                            break;
+                    }
+                }
+                if (mPreparingUri == null && playerState.trackUri.equals(mPreparedUri)) {
+                    Bundle args;
+                    switch (eventType) {
+                        case TRACK_END:
+                            broadcastToAll(MSG_ONPLAYERENDOFTRACK);
+                            break;
+                        case PAUSE:
+                            broadcastToAll(MSG_ONPAUSE);
+                            break;
+                        case PLAY:
+                            broadcastToAll(MSG_ONPLAY);
+                            break;
+                        case LOST_PERMISSION:
+                            args = new Bundle();
+                            args.putString(MSG_ONERROR_ARG_MESSAGE,
+                                    "Spotify is currently being used on a different device.");
+                            broadcastToAll(MSG_ONERROR, args);
+                    }
                 }
             }
         }
@@ -351,17 +369,19 @@ public class SpotifyService extends Service {
             player.getPlayerState(new PlayerStateCallback() {
                 @Override
                 public void onPlayerState(PlayerState playerState) {
-                    Bundle args = new Bundle();
-                    args.putInt(MSG_ONPLAYERPOSITIONCHANGED_ARG_POSITION,
-                            playerState.positionInMs);
-                    args.putLong(MSG_ONPLAYERPOSITIONCHANGED_ARG_TIMESTAMP,
-                            System.currentTimeMillis());
-                    broadcastToAll(MSG_ONPLAYERPOSITIONCHANGED, args);
+                    reportPosition(playerState.positionInMs);
                 }
             });
         } else {
             Log.e(TAG, "Wasn't able to reportCurrentPosition, because given Player is was null!");
         }
+    }
+
+    private void reportPosition(int positionInMs) {
+        Bundle args = new Bundle();
+        args.putInt(MSG_ONPLAYERPOSITIONCHANGED_ARG_POSITION, positionInMs);
+        args.putLong(MSG_ONPLAYERPOSITIONCHANGED_ARG_TIMESTAMP, System.currentTimeMillis());
+        broadcastToAll(MSG_ONPLAYERPOSITIONCHANGED, args);
     }
 
     private void broadcastToAll(int what) {
