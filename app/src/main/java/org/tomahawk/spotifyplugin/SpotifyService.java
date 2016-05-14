@@ -339,6 +339,8 @@ public class SpotifyService extends Service {
     public void onDestroy() {
         if (mPlayer != null) {
             mPlayer.pause();
+            mPlayer.removeConnectionStateCallback(mConnectionStateCallback);
+            mPlayer.removePlayerNotificationCallback(mPlayerNotificationCallback);
             mPlayer = null;
         }
         Spotify.destroyPlayer(this);
