@@ -91,6 +91,10 @@ public class SpotifyService extends Service {
 
     private Player mPlayer;
 
+    private boolean mIsResuming;
+
+    private boolean mIsPausing;
+
     private String mPreparingUri;
 
     private String mPreparedUri;
@@ -166,8 +170,9 @@ public class SpotifyService extends Service {
                             s.mPlayer.getPlayerState(new PlayerStateCallback() {
                                 @Override
                                 public void onPlayerState(PlayerState playerState) {
-                                    if (!playerState.playing) {
+                                    if (!s.mIsResuming && !playerState.playing) {
                                         Log.d(TAG, "play - resuming playback");
+                                        s.mIsResuming = true;
                                         s.mPlayer.resume();
                                     }
                                 }
@@ -184,8 +189,9 @@ public class SpotifyService extends Service {
                             s.mPlayer.getPlayerState(new PlayerStateCallback() {
                                 @Override
                                 public void onPlayerState(PlayerState playerState) {
-                                    if (playerState.playing) {
+                                    if (!s.mIsPausing && playerState.playing) {
                                         Log.d(TAG, "pause - pausing playback");
+                                        s.mIsPausing = true;
                                         s.mPlayer.pause();
                                     }
                                 }
@@ -300,9 +306,11 @@ public class SpotifyService extends Service {
                             broadcastToAll(MSG_ONPLAYERENDOFTRACK);
                             break;
                         case PAUSE:
+                            mIsPausing = false;
                             broadcastToAll(MSG_ONPAUSE);
                             break;
                         case PLAY:
+                            mIsResuming = false;
                             broadcastToAll(MSG_ONPLAY);
                             break;
                         case LOST_PERMISSION:
