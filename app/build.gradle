@@ -8,8 +8,8 @@ android {
         applicationId "org.tomahawk.spotifyplugin"
         minSdkVersion 15
         targetSdkVersion 22
-        versionCode 50
-        versionName "0.50"
+        versionCode 51
+        versionName "0.51"
     }
 
     /*
