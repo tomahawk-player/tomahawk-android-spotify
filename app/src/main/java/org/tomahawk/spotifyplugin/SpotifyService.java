@@ -158,6 +158,8 @@ public class SpotifyService extends Service {
                                             + throwable.getMessage());
                                 }
                             });
+                    s.mIsResuming = false;
+                    s.mIsPausing = false;
                     s.reportPosition(0);
                     Log.d(TAG, "Preparing uri: " + uri);
                     s.mPreparingUri = uri;
@@ -307,9 +309,11 @@ public class SpotifyService extends Service {
                             break;
                         case PAUSE:
                             mIsPausing = false;
+                            mIsResuming = false;
                             broadcastToAll(MSG_ONPAUSE);
                             break;
                         case PLAY:
+                            mIsPausing = false;
                             mIsResuming = false;
                             broadcastToAll(MSG_ONPLAY);
                             break;
